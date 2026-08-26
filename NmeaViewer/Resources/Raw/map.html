@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        const map = L.map('map', { zoomControl: true, maxZoom: 21 }).setView([39.0, -105.0], 14);
+
+        const basemaps = {
+            street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                maxNativeZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            }),
+            satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 21,
+                maxNativeZoom: 21,
+                attribution: '&copy; Esri'
+            }),
+            hybrid: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 21,
+                maxNativeZoom: 21,
+                attribution: '&copy; Esri'
+            })
+        };
+
+        let labelsLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            opacity: 0.35
+        });
+
+        let activeBasemap = 'street';
+        basemaps.street.addTo(map);
+
+        const trackGroup = L.layerGroup().addTo(map);
+        const overlayGroup = L.layerGroup().addTo(map);
+        let fitPending = false;
+
+        window.setBasemap = function (type) {
+            Object.values(basemaps).forEach(l => map.removeLayer(l));
+            map.removeLayer(labelsLayer);
+            activeBasemap = type;
+            if (type === 'hybrid') {
+                map.setMaxZoom(21);
+                basemaps.hybrid.addTo(map);
+                labelsLayer.addTo(map);
+            } else if (type === 'satellite') {
+                map.setMaxZoom(21);
+                basemaps.satellite.addTo(map);
+            } else if (basemaps[type]) {
+                map.setMaxZoom(19);
+                basemaps[type].addTo(map);
+            } else {
+                map.setMaxZoom(19);
+                basemaps.street.addTo(map);
+            }
+        };
+
+        window.updateTrack = function (payload) {
+            trackGroup.clearLayers();
+            overlayGroup.clearLayers();
+
+            if (!payload || !payload.segments) return;
+
+            const allLatLngs = [];
+
+            payload.segments.forEach(segment => {
+                if (!segment || segment.length < 2) return;
+                const latlngs = segment.map(p => [p.lat, p.lon]);
+                latlngs.forEach(ll => allLatLngs.push(ll));
+                L.polyline(latlngs, { color: '#6495ED', weight: 3, opacity: 0.9 }).addTo(trackGroup);
+            });
+
+            if (payload.current) {
+                const c = payload.current;
+                const latlng = [c.lat, c.lon];
+                allLatLngs.push(latlng);
+
+                if (c.accuracyM > 0) {
+                    L.circle(latlng, {
+                        radius: c.accuracyM,
+                        color: '#00BFFF',
+                        fillColor: '#00BFFF',
+                        fillOpacity: 0.15,
+                        weight: 1
+                    }).addTo(overlayGroup);
+                }
+
+                if (c.speedKnots > 0.001 && c.heading >= 0) {
+                    const heading = c.heading * Math.PI / 180;
+                    const distM = Math.max(5, c.speedKnots * 10);
+                    const dLat = (distM * Math.cos(heading)) / 111320;
+                    const dLon = (distM * Math.sin(heading)) / (111320 * Math.cos(latlng[0] * Math.PI / 180));
+                    const end = [latlng[0] + dLat, latlng[1] + dLon];
+                    L.polyline([latlng, end], { color: '#FFD700', weight: 3 }).addTo(overlayGroup);
+                }
+
+                L.circleMarker(latlng, {
+                    radius: 7,
+                    color: c.validFix ? '#1E90FF' : '#FF0000',
+                    fillColor: c.validFix ? '#1E90FF' : '#FF0000',
+                    fillOpacity: 1,
+                    weight: 2
+                }).addTo(overlayGroup);
+            }
+
+            if (payload.fitBounds && allLatLngs.length > 0) {
+                map.fitBounds(allLatLngs, { padding: [30, 30] });
+                fitPending = false;
+            }
+        };
+
+        window.fitTrack = function () {
+            const layers = [];
+            trackGroup.eachLayer(l => {
+                if (l.getLatLngs) layers.push(...flattenLatLngs(l.getLatLngs()));
+            });
+            overlayGroup.eachLayer(l => {
+                if (l.getLatLng) layers.push(l.getLatLng());
+            });
+            if (layers.length > 0) {
+                map.fitBounds(layers, { padding: [30, 30] });
+            }
+        };
+
+        function flattenLatLngs(latlngs) {
+            if (!latlngs || latlngs.length === 0) return [];
+            if (latlngs[0].lat !== undefined) return latlngs;
+            return latlngs.flatMap(flattenLatLngs);
+        }
+    </script>
+</body>
+</html>

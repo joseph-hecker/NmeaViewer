@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="Nmea/Nmea.csproj" Id="af8c820f-29c7-42b5-ad7d-e1302711eafe" />
+  <Project Path="Nmea.Test/Nmea.Test.csproj" />
   <Project Path="NmeaViewer/NmeaViewer.csproj" />
 </Solution>

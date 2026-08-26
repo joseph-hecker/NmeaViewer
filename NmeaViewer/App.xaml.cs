@@ -1,6 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-
-namespace NmeaViewer
+﻿namespace NmeaViewer
 {
     public partial class App : Application
     {
